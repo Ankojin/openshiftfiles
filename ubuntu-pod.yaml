@@ -7,3 +7,6 @@ spec:
   - name: ubuntu
     image: ubuntu:latest
     command: ["sleep", "infinity"]
+  imagePullSecrets:
+  - name: my-image-pull-secret
+  serviceAccountName: my-service-account
