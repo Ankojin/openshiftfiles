@@ -1,0 +1,20 @@
+FROM ubuntu:20.04
+
+# Install updates and basic utilities
+RUN apt-get update && apt-get install -y \
+    vim \
+    curl \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set the working directory
+WORKDIR /root
+
+# Copy a script or other files into the container
+COPY myscript.sh /root/myscript.sh
+
+# Run the script
+RUN chmod +x /root/myscript.sh && /root/myscript.sh
+
+# Default command to run when starting the container
+CMD ["bash"]
