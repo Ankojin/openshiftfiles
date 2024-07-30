@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-operator
+  namespace: <namespace> # Replace with your namespace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: my-operator
+  template:
+    metadata:
+      labels:
+        name: my-operator
+    spec:
+      serviceAccountName: my-operator-sa
+      imagePullSecrets:
+      - name: my-registry-secret
+      containers:
+      - name: my-operator
+        image: <your-operator-image> # Replace with your operator image
+        ports:
+        - containerPort: 8080
