@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: ubuntu-pod
+  namespace: my-namespace
 spec:
   containers:
   - name: ubuntu
@@ -9,4 +10,3 @@ spec:
     command: ["sleep", "infinity"]
   imagePullSecrets:
   - name: my-image-pull-secret
-  serviceAccountName: my-service-account
