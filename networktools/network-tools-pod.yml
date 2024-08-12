@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: network-tools-pod
+  namespace: test-ankoji
+spec:
+  containers:
+  - name: network-tools-pod
+    image: ankojin/networktools:latest
+    command: ["/bin/bash", "-c", "sleep infinity"]
+    securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
