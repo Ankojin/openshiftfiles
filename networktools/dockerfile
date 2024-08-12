@@ -1,0 +1,20 @@
+# Use Alpine Linux as the base image
+FROM alpine:latest
+
+# Install common network tools
+RUN apk update && apk add --no-cache \
+    bash \
+    curl \
+    wget \
+    net-tools \
+    iputils \
+    iproute2 \
+    tcpdump \
+    bind-tools \
+    netcat-openbsd \
+    mtr \
+    traceroute \
+    socat
+
+# Set bash as the default shell
+CMD ["/bin/bash"]
