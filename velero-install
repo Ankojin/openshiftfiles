@@ -1,0 +1,115 @@
+To install and configure Velero on Azure OpenShift, follow the steps below. Velero is a tool that helps you backup and restore your Kubernetes resources and persistent volumes.
+
+### Prerequisites:
+1. **OpenShift Cluster**: Ensure you have an OpenShift cluster running on Azure.
+2. **Azure CLI**: Ensure you have the Azure CLI installed and configured with appropriate permissions.
+3. **kubectl**: Ensure `kubectl` is installed and configured to access your OpenShift cluster.
+4. **Velero CLI**: Download and install the Velero CLI from the official [Velero GitHub releases page](https://github.com/vmware-tanzu/velero/releases).
+
+### Step 1: Create an Azure Storage Account and Blob Container
+Velero needs a storage account and a blob container to store backups.
+
+1. **Create a resource group** (if you don't already have one):
+   ```bash
+   az group create --name <resource-group-name> --location <location>
+   ```
+
+2. **Create a storage account**:
+   ```bash
+   az storage account create --name <storage-account-name> --resource-group <resource-group-name> --sku Standard_LRS --encryption-services blob
+   ```
+
+3. **Create a blob container**:
+   ```bash
+   az storage container create --name <blob-container-name> --account-name <storage-account-name>
+   ```
+
+4. **Get the storage account key**:
+   ```bash
+   AZURE_STORAGE_ACCOUNT_ACCESS_KEY=$(az storage account keys list --resource-group <resource-group-name> --account-name <storage-account-name> --query '[0].value' --output tsv)
+   ```
+
+### Step 2: Create a Service Principal for Velero
+A service principal is required to give Velero permissions to manage resources in your Azure account.
+
+1. **Create the service principal**:
+   ```bash
+   az ad sp create-for-rbac --name "velero" --role "Contributor" --scope "/subscriptions/<your-subscription-id>" --query '{client_id: appId, client_secret: password, tenant_id: tenant}'
+   ```
+
+   This command will output the following values:
+   - `client_id`
+   - `client_secret`
+   - `tenant_id`
+
+### Step 3: Install Velero on OpenShift
+You will install Velero on OpenShift using the `velero install` command.
+
+1. **Create a credentials file** (`credentials-velero`):
+   ```bash
+   cat <<EOF > ./credentials-velero
+   AZURE_SUBSCRIPTION_ID=<your-subscription-id>
+   AZURE_TENANT_ID=<tenant-id>
+   AZURE_CLIENT_ID=<client-id>
+   AZURE_CLIENT_SECRET=<client-secret>
+   AZURE_RESOURCE_GROUP=<resource-group-name>
+   AZURE_CLOUD_NAME=AzurePublicCloud
+   EOF
+   ```
+
+2. **Install Velero**:
+   ```bash
+   velero install \
+     --provider azure \
+     --plugins velero/velero-plugin-for-microsoft-azure:v1.5.0 \
+     --bucket <blob-container-name> \
+     --secret-file ./credentials-velero \
+     --backup-location-config resourceGroup=<resource-group-name>,storageAccount=<storage-account-name>,subscriptionId=<your-subscription-id> \
+     --snapshot-location-config apiTimeout=30m \
+     --use-restic \
+     --use-volume-snapshots=false
+   ```
+
+   - `--use-restic`: Enables Restic for persistent volume backup/restore.
+   - `--use-volume-snapshots=false`: Avoids using native volume snapshots on Azure, using Restic instead.
+
+### Step 4: Verify Installation
+Check that Velero has been installed successfully and is running.
+
+```bash
+kubectl get pods -n velero
+```
+
+You should see the Velero and Restic pods running.
+
+### Step 5: Create and Test a Backup
+1. **Create a backup**:
+   ```bash
+   velero backup create <backup-name> --include-namespaces <namespace>
+   ```
+
+2. **Verify the backup**:
+   ```bash
+   velero backup describe <backup-name> --details
+   ```
+
+3. **Restore the backup** (if necessary):
+   ```bash
+   velero restore create --from-backup <backup-name>
+   ```
+
+### Step 6: Schedule Regular Backups (Optional)
+To schedule regular backups, you can create a cron job using Velero:
+
+```bash
+velero schedule create <schedule-name> --schedule="0 0 * * *" --include-namespaces <namespace>
+```
+
+### Step 7: Monitor Velero
+Monitor Velero using the logs:
+
+```bash
+kubectl logs deploy/velero -n velero
+```
+
+This setup provides a basic installation of Velero on Azure OpenShift. You can customize and expand upon this setup depending on your specific requirements, such as using additional plugins, configuring advanced backup options, or integrating with other cloud providers.
