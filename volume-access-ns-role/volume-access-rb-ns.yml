@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: volume-access-binding
+  namespace: your-namespace
+subjects:
+  - kind: Group
+    name: your-group
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: volume-access-role
+  apiGroup: rbac.authorization.k8s.io
