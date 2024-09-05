@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: network-tools-server-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: network-tools-server-app
+  template:
+    metadata:
+      labels:
+        app: network-tools-server-app
+    spec:
+      containers:
+      - name: network-tools
+        image: ankojin/networktools:latest
+        command: ["/bin/bash", "-c", "sleep infinity"]
+    securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
