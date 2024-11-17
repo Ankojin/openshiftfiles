@@ -1,0 +1,196 @@
+Here’s how to deploy **Prometheus**, **Azure Monitor Exporter**, and **Grafana** in an Azure Red Hat OpenShift (ARO) cluster using **Helm**:
+
+---
+
+## **1. Prerequisites**
+1. **Install Helm**: Ensure you have Helm installed on your local system:
+   ```bash
+   helm version
+   ```
+   If not, follow the [Helm installation guide](https://helm.sh/docs/intro/install/).
+
+2. **Access ARO Cluster**:
+   Log in to your ARO cluster using `oc login`.
+
+3. **Add Helm Repositories**:
+   Add the required repositories for Prometheus and Grafana:
+   ```bash
+   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+   helm repo add grafana https://grafana.github.io/helm-charts
+   helm repo update
+   ```
+
+4. **Create Namespaces**:
+   Create namespaces for monitoring tools:
+   ```bash
+   oc create namespace monitoring
+   ```
+
+---
+
+## **2. Deploy Prometheus**
+Use the Prometheus Helm chart for deployment.
+
+1. **Install Prometheus**:
+   ```bash
+   helm install prometheus prometheus-community/prometheus \
+     --namespace monitoring \
+     --set server.service.type=ClusterIP \
+     --set alertmanager.enabled=false \
+     --set pushgateway.enabled=false
+   ```
+
+2. **Verify Deployment**:
+   Check Prometheus pods:
+   ```bash
+   oc get pods -n monitoring | grep prometheus
+   ```
+
+3. **Expose Prometheus (Optional)**:
+   Create an OpenShift route for Prometheus:
+   ```bash
+   oc expose svc prometheus-server --namespace monitoring
+   ```
+
+   Get the route:
+   ```bash
+   oc get route prometheus-server -n monitoring
+   ```
+
+---
+
+## **3. Deploy Azure Monitor Exporter**
+The Azure Monitor Exporter exports Prometheus metrics to Azure Monitor.
+
+1. **Create Azure Monitor Exporter Deployment YAML**:
+   Save the following as `azure-monitor-exporter.yaml`:
+   ```yaml
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: azure-monitor-exporter
+     namespace: monitoring
+   spec:
+     replicas: 1
+     selector:
+       matchLabels:
+         app: azure-monitor-exporter
+     template:
+       metadata:
+         labels:
+           app: azure-monitor-exporter
+       spec:
+         containers:
+         - name: azure-monitor-exporter
+           image: mcr.microsoft.com/azuremonitor/containerinsights-prometheus:latest
+           env:
+           - name: AZMON_METRICS_WORKSPACE_ID
+             value: "<Log Analytics Workspace ID>"
+           - name: AZMON_METRICS_WORKSPACE_KEY
+             value: "<Workspace Key>"
+           ports:
+           - containerPort: 9464
+   ```
+
+2. **Apply the Deployment**:
+   ```bash
+   oc apply -f azure-monitor-exporter.yaml
+   ```
+
+3. **Add Exporter to Prometheus Config**:
+   Edit the Prometheus Helm values using `helm upgrade`:
+   ```bash
+   helm upgrade prometheus prometheus-community/prometheus \
+     --namespace monitoring \
+     --set serverFiles.prometheus.yml.scrape_configs[0].job_name="azure-monitor-exporter" \
+     --set serverFiles.prometheus.yml.scrape_configs[0].static_configs[0].targets[0]="azure-monitor-exporter.monitoring.svc.cluster.local:9464"
+   ```
+
+4. **Verify Exporter Logs**:
+   Check logs to ensure metrics are being exported:
+   ```bash
+   oc logs -f deployment/azure-monitor-exporter -n monitoring
+   ```
+
+---
+
+## **4. Deploy Grafana**
+Use the Grafana Helm chart to deploy Grafana.
+
+1. **Install Grafana**:
+   ```bash
+   helm install grafana grafana/grafana \
+     --namespace monitoring \
+     --set service.type=ClusterIP \
+     --set adminPassword='admin' \
+     --set persistence.enabled=false
+   ```
+
+2. **Expose Grafana**:
+   Create an OpenShift route:
+   ```bash
+   oc expose svc grafana --namespace monitoring
+   ```
+
+   Get the route:
+   ```bash
+   oc get route grafana -n monitoring
+   ```
+
+3. **Log in to Grafana**:
+   - Open the Grafana route in a browser.
+   - Default credentials:
+     - Username: `admin`
+     - Password: `admin` (or the value you set).
+
+---
+
+## **5. Configure Grafana Data Sources**
+
+### **5.1. Add Prometheus Data Source**
+1. Go to **Configuration** > **Data Sources** > **Add Data Source**.
+2. Select **Prometheus** and configure:
+   - URL: `http://prometheus-server.monitoring.svc.cluster.local`.
+
+### **5.2. Add Azure Monitor Data Source**
+1. Install the Azure Monitor plugin (if needed):
+   ```bash
+   grafana-cli plugins install grafana-azure-monitor-datasource
+   ```
+2. Add the Azure Monitor data source:
+   - Tenant ID
+   - Client ID
+   - Client Secret
+   - Subscription ID
+
+---
+
+## **6. Verify and Test**
+1. **Check Prometheus Metrics**:
+   Use Prometheus queries in Grafana, such as:
+   ```promql
+   rate(http_requests_total[1m])
+   ```
+
+2. **Check Azure Monitor Metrics**:
+   Use KQL queries in Grafana, such as:
+   ```kql
+   InsightsMetrics
+   | summarize avg(Val) by Namespace
+   ```
+
+3. **Test Dashboards**:
+   - Import prebuilt dashboards (e.g., Kubernetes Monitoring).
+   - Create custom panels using Prometheus and Azure Monitor metrics.
+
+---
+
+## **7. Cleanup (Optional)**
+To clean up resources, uninstall the Helm charts:
+```bash
+helm uninstall prometheus --namespace monitoring
+helm uninstall grafana --namespace monitoring
+oc delete deployment azure-monitor-exporter -n monitoring
+```
+
+This setup provides a comprehensive monitoring stack for your ARO cluster. Let me know if you'd like further assistance with specific configurations or dashboard setups!
