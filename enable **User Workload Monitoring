@@ -1,0 +1,150 @@
+To enable **User Workload Monitoring** in Azure Red Hat OpenShift (ARO) 4.14, follow these steps. This allows Prometheus to collect metrics from applications deployed in the cluster, alongside the default monitoring for cluster infrastructure.
+
+---
+
+### **1. Prerequisites**
+- Ensure you have access to the ARO cluster and sufficient permissions to manage configurations in the `openshift-monitoring` namespace.
+- Make sure the OpenShift CLI (`oc`) is installed and logged in.
+
+---
+
+### **2. Enable User Workload Monitoring**
+
+1. **Edit the Cluster Monitoring Configuration**:
+   The configuration to enable user workload monitoring is stored in the `cluster-monitoring-config` ConfigMap in the `openshift-monitoring` namespace.
+
+   Run the following command to edit it:
+   ```bash
+   oc edit configmap cluster-monitoring-config -n openshift-monitoring
+   ```
+
+2. **Add the Configuration**:
+   Add the following configuration to enable user workload monitoring:
+   ```yaml
+   data:
+     config.yaml: |
+       enableUserWorkload: true
+   ```
+
+   Save and close the editor.
+
+3. **Verify the Change**:
+   Check the status of the monitoring stack components for user workloads:
+   ```bash
+   oc get pods -n openshift-user-workload-monitoring
+   ```
+   You should see pods for components like `prometheus-user-workload`, `thanos-ruler`, etc.
+
+---
+
+### **3. Verify Monitoring**
+1. **Access Prometheus for User Workloads**:
+   You can access the Prometheus instance for user workloads by creating a port-forward:
+   ```bash
+   oc port-forward -n openshift-user-workload-monitoring svc/prometheus-user-workload 9090:9090
+   ```
+   Access it at `http://localhost:9090`.
+
+2. **Access Thanos Ruler (Optional)**:
+   Thanos Ruler is responsible for evaluating Prometheus rules and sending alerts. Create a port-forward if you need access:
+   ```bash
+   oc port-forward -n openshift-user-workload-monitoring svc/thanos-ruler 9091:9091
+   ```
+
+---
+
+### **4. Deploy Application Monitoring**
+Once user workload monitoring is enabled, you need to configure Prometheus to scrape metrics from your applications.
+
+#### **Step 4.1. Ensure Applications Expose Metrics**
+Applications should expose metrics in Prometheus format, typically on an HTTP endpoint like `/metrics`. Libraries such as **Prometheus client libraries** (e.g., `prometheus_client` for Python, `prom-client` for Node.js) can be used.
+
+#### **Step 4.2. Create a ServiceMonitor**
+A `ServiceMonitor` object is used to define how Prometheus should scrape metrics from your application.
+
+1. **Define the ServiceMonitor YAML**:
+   ```yaml
+   apiVersion: monitoring.coreos.com/v1
+   kind: ServiceMonitor
+   metadata:
+     name: my-app-monitor
+     namespace: my-app-namespace
+   spec:
+     selector:
+       matchLabels:
+         app: my-app
+     endpoints:
+       - port: metrics
+         path: /metrics
+   ```
+
+2. **Apply the ServiceMonitor**:
+   Deploy it to the cluster:
+   ```bash
+   oc apply -f servicemonitor.yaml
+   ```
+
+3. **Verify Scraping**:
+   Check the Prometheus UI to ensure the metrics are being scraped:
+   - Query: `up{job="my-app"}`
+
+---
+
+### **5. Configure Alerting**
+You can create custom alerts for user workloads using **PrometheusRule** objects.
+
+1. **Define a PrometheusRule**:
+   Create a YAML file with your alerting rules:
+   ```yaml
+   apiVersion: monitoring.coreos.com/v1
+   kind: PrometheusRule
+   metadata:
+     name: custom-alerts
+     namespace: my-app-namespace
+   spec:
+     groups:
+     - name: custom.rules
+       rules:
+       - alert: HighCPUUsage
+         expr: sum(rate(container_cpu_usage_seconds_total[5m])) by (namespace) > 0.8
+         for: 5m
+         labels:
+           severity: warning
+         annotations:
+           summary: "High CPU usage detected"
+           description: "CPU usage is above 80% in namespace {{ $labels.namespace }}"
+   ```
+
+2. **Apply the PrometheusRule**:
+   ```bash
+   oc apply -f prometheusrule.yaml
+   ```
+
+3. **Test Alerts**:
+   View alerts in the Thanos Ruler UI or via the default Alertmanager.
+
+---
+
+### **6. Best Practices**
+- **Namespaces for ServiceMonitors**: Place your `ServiceMonitor` objects in the same namespace as your application.
+- **Restrict Access**: Use OpenShift RBAC to control who can view or edit user workload monitoring configurations.
+- **Long-Term Storage**: For persistent metrics storage, consider integrating with a remote system like Thanos or Azure Monitor.
+
+---
+
+### **7. Cleanup (Optional)**
+If you no longer need user workload monitoring:
+1. Disable it by editing the `cluster-monitoring-config` ConfigMap:
+   ```bash
+   oc edit configmap cluster-monitoring-config -n openshift-monitoring
+   ```
+   Set `enableUserWorkload` to `false`.
+
+2. Delete resources created for user workload monitoring:
+   ```bash
+   oc delete namespace openshift-user-workload-monitoring
+   ```
+
+---
+
+Let me know if you'd like help configuring specific queries or setting up dashboards!
