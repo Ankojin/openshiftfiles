@@ -1,0 +1,155 @@
+To apply **User Workload Monitoring** by default to specific namespaces and their pods, you can configure **PrometheusOperator** and **ServiceMonitor** resources to automatically scrape metrics from workloads within your desired namespaces. This requires a combination of label management and configuration in your OpenShift cluster.
+
+---
+
+### **Steps to Apply Monitoring by Default to Specific Namespaces**
+
+#### **1. Enable User Workload Monitoring (If Not Already Enabled)**
+Follow the steps from the previous instructions to enable User Workload Monitoring in the `openshift-monitoring` namespace.
+
+---
+
+#### **2. Add Labels to Target Namespaces**
+Prometheus uses labels to identify namespaces for monitoring. You must label your desired namespaces to ensure they are included.
+
+1. Add a label to your namespaces:
+   ```bash
+   oc label namespace <namespace-name> openshift.io/cluster-monitoring=true
+   ```
+
+   Example for multiple namespaces:
+   ```bash
+   oc label namespace team-a openshift.io/cluster-monitoring=true
+   oc label namespace team-b openshift.io/cluster-monitoring=true
+   ```
+
+2. Verify that the label has been applied:
+   ```bash
+   oc get namespaces --show-labels
+   ```
+
+---
+
+#### **3. Deploy a Default ServiceMonitor**
+You can create a **ServiceMonitor** that applies automatically to all pods with a specific label within the labeled namespaces.
+
+1. Create a YAML file for the `ServiceMonitor`:
+   ```yaml
+   apiVersion: monitoring.coreos.com/v1
+   kind: ServiceMonitor
+   metadata:
+     name: default-servicemonitor
+     namespace: openshift-user-workload-monitoring
+   spec:
+     namespaceSelector:
+       matchLabels:
+         openshift.io/cluster-monitoring: "true"  # Match only labeled namespaces
+     selector:
+       matchLabels:
+         monitoring: enabled  # Match only pods with this label
+     endpoints:
+       - port: metrics  # Port where metrics are exposed
+         path: /metrics  # Path to scrape metrics
+         interval: 30s
+   ```
+
+2. Apply the `ServiceMonitor` to the cluster:
+   ```bash
+   oc apply -f default-servicemonitor.yaml
+   ```
+
+---
+
+#### **4. Add Labels to Pods**
+Ensure that the pods within your labeled namespaces have the appropriate label to match the `ServiceMonitor` selector.
+
+For example:
+1. Edit your pod deployment:
+   ```bash
+   oc edit deployment <deployment-name> -n <namespace-name>
+   ```
+2. Add the label under `metadata.labels`:
+   ```yaml
+   metadata:
+     labels:
+       monitoring: enabled
+   ```
+
+Alternatively, add the label during the deployment creation:
+```bash
+oc label deployment <deployment-name> -n <namespace-name> monitoring=enabled
+```
+
+---
+
+#### **5. Verify Monitoring**
+1. Access the Prometheus UI (via port-forwarding) to confirm that metrics are being scraped:
+   ```bash
+   oc port-forward -n openshift-user-workload-monitoring svc/prometheus-user-workload 9090:9090
+   ```
+
+2. Query for your application metrics, such as:
+   ```promql
+   up{namespace="<namespace-name>"}
+   ```
+
+   If the query returns results, your pods are being monitored.
+
+---
+
+#### **6. Automate Namespace and Pod Labeling**
+To ensure all newly created namespaces and pods are automatically labeled for monitoring:
+1. Use an **OpenShift Namespace Template**:
+   - Customize your cluster’s default namespace template to include the required labels.
+   - Apply the template during namespace creation.
+
+2. Use **Admission Controllers**:
+   - Set up a MutatingAdmissionWebhook to automatically add labels to namespaces and pods when they are created.
+
+---
+
+#### **7. Adjust Scraping Configurations (Optional)**
+If you want to monitor all namespaces and their pods by default, adjust the `namespaceSelector` and `selector` in the `ServiceMonitor` to be less restrictive:
+- Monitor all namespaces:
+  ```yaml
+  namespaceSelector:
+    any: true
+  ```
+- Monitor all pods (remove `matchLabels` under `selector`):
+  ```yaml
+  selector: {}
+  ```
+
+---
+
+### **8. Configure Default Alerts (Optional)**
+Create a `PrometheusRule` that applies to all namespaces and sets alerts for pods and workloads:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: default-alerts
+  namespace: openshift-user-workload-monitoring
+spec:
+  groups:
+  - name: workload.rules
+    rules:
+    - alert: HighPodMemoryUsage
+      expr: container_memory_working_set_bytes / container_spec_memory_limit_bytes > 0.9
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Pod memory usage is high"
+        description: "Memory usage for pod {{ $labels.pod }} in namespace {{ $labels.namespace }} is above 90% of its limit."
+```
+
+Apply the rule:
+```bash
+oc apply -f prometheusrule.yaml
+```
+
+---
+
+This setup ensures that all namespaces and pods matching the specified labels are monitored by default, without requiring manual configuration for each new application. Let me know if you’d like further assistance!
