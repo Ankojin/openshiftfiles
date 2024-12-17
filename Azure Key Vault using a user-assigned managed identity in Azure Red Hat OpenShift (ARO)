@@ -1,0 +1,108 @@
+Certainly! Here's the updated configuration for accessing Azure Key Vault using a user-assigned managed identity in Azure Red Hat OpenShift (ARO).
+
+### Step 1: Add the Azure Helm Repository
+First, add the Azure Helm repository to your Helm setup:
+
+```bash
+helm repo add csi-secrets-store-provider-azure https://azure.github.io/secrets-store-csi-driver-provider-azure/charts
+helm repo update
+```
+
+### Step 2: Install the Secrets Store CSI Driver
+Install the Secrets Store CSI driver using Helm:
+
+```bash
+helm install csi-secrets-store secrets-store-csi-driver/secrets-store-csi-driver -n kube-system
+```
+
+### Step 3: Install the Azure Key Vault Provider
+Install the Azure Key Vault provider using Helm:
+
+```bash
+helm install csi-secrets-store-provider-azure csi-secrets-store-provider-azure/csi-secrets-store-provider-azure -n kube-system
+```
+
+### Step 4: Configure Azure Managed Identity
+Ensure your AKS cluster nodes are assigned a user-assigned managed identity with the necessary permissions to access Key Vault.
+
+1. **Create a User-Assigned Managed Identity**:
+   ```bash
+   az identity create --name <your-identity-name> --resource-group <your-resource-group>
+   ```
+
+2. **Assign the Managed Identity to the Key Vault**:
+   ```bash
+   az keyvault set-policy -n <your-key-vault-name> --secret-permissions get --spn <your-managed-identity-client-id>
+   ```
+
+3. **Assign the Managed Identity to the AKS Node Pool**:
+   ```bash
+   az aks nodepool identity assign --cluster-name <your-cluster-name> --resource-group <your-resource-group> --name <your-nodepool-name> --identity <your-identity-id>
+   ```
+
+### Step 5: Create a SecretProviderClass Resource
+Create a `SecretProviderClass` resource that uses the user-assigned managed identity:
+
+```yaml
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: azure-keyvault-secretproviderclass
+spec:
+  provider: azure
+  secretObjects:
+    - secretName: my-secret
+      type: Opaque
+      data:
+        - key: username
+          objectName: username
+        - key: password
+          objectName: password
+  parameters:
+    usePodIdentity: "true"
+    userAssignedIdentityID: <your-managed-identity-client-id>
+    keyVaultName: <your-key-vault-name>
+    objects: |
+      array:
+        - |
+          objectName: "username"
+          objectType: "secret"
+        - |
+          objectName: "password"
+          objectType: "secret"
+    tenantId: <your-tenant-id>
+```
+
+### Step 6: Deploy a Pod Using the SecretProviderClass
+Deploy a pod that uses the `SecretProviderClass` to mount the secrets:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: keyvault-access-pod
+spec:
+  containers:
+  - name: keyvault-container
+    image: nginx:1.14.2
+    volumeMounts:
+    - name: secrets-store-inline
+      mountPath: /mnt/secrets-store
+      readOnly: true
+  volumes:
+  - name: secrets-store-inline
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: "azure-keyvault-secretproviderclass"
+```
+
+### Summary
+- **Helm Repository**: Added the repository and updated Helm.
+- **Secrets Store CSI Driver**: Installed the driver.
+- **Azure Key Vault Provider**: Installed the provider.
+- **User-Assigned Managed Identity**: Created and assigned the identity, and configured it in `SecretProviderClass`.
+- **Pod Deployment**: Deployed a pod using the `SecretProviderClass`.
+
+Would you like more details on any specific part of this setup?
