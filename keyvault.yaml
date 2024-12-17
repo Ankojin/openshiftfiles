@@ -1,0 +1,108 @@
+Here's an example of how to integrate with Python to access Azure Key Vault from a pod running in Azure Red Hat OpenShift (ARO) using a managed identity.
+
+### Step-by-Step Guide
+
+#### Step 1: Install Required Python Libraries
+
+First, make sure you have the required libraries installed in your Python environment. You can install them using `pip`:
+
+```bash
+pip install azure-identity azure-keyvault-secrets
+```
+
+#### Step 2: Create a Python Script
+
+Create a Python script to access Azure Key Vault using the managed identity.
+
+```python
+from azure.identity import DefaultAzureCredential
+from azure.keyvault.secrets import SecretClient
+import os
+
+# Retrieve environment variables
+key_vault_name = os.environ["KEYVAULT_NAME"]
+secret_name = os.environ["SECRET_NAME"]
+
+# Construct the Key Vault URL
+key_vault_url = f"https://{key_vault_name}.vault.azure.net"
+
+# Obtain an access token using DefaultAzureCredential
+credential = DefaultAzureCredential()
+
+# Create a client for Key Vault
+client = SecretClient(vault_url=key_vault_url, credential=credential)
+
+# Access the secret from Key Vault
+retrieved_secret = client.get_secret(secret_name)
+print(f"Secret: {retrieved_secret.value}")
+```
+
+#### Step 3: Pod YAML Configuration
+
+Here's the updated pod YAML configuration to run the Python script in a container:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: keyvault-access-pod
+  labels:
+    app: keyvault-access
+spec:
+  containers:
+  - name: keyvault-container
+    image: python:3.9-slim
+    command: ["python", "/app/keyvault_script.py"]
+    volumeMounts:
+    - name: script-volume
+      mountPath: /app
+    env:
+    - name: AZURE_CLIENT_ID
+      value: "<your-managed-identity-client-id>"
+    - name: KEYVAULT_NAME
+      value: "<your-key-vault-name>"
+    - name: SECRET_NAME
+      value: "<your-secret-name>"
+  volumes:
+  - name: script-volume
+    configMap:
+      name: keyvault-script-config
+  nodeSelector:
+    kubernetes.io/os: linux
+  restartPolicy: Always
+  identity: # Add your managed identity reference here
+    type: UserAssigned
+    userAssignedIdentities:
+      - <your-managed-identity-resource-id>
+```
+
+#### Step 4: Create a ConfigMap for the Script
+
+Create a ConfigMap to store your Python script:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keyvault-script-config
+data:
+  keyvault_script.py: |
+    from azure.identity import DefaultAzureCredential
+    from azure.keyvault.secrets import SecretClient
+    import os
+
+    key_vault_name = os.environ["KEYVAULT_NAME"]
+    secret_name = os.environ["SECRET_NAME"]
+
+    key_vault_url = f"https://{key_vault_name}.vault.azure.net"
+    credential = DefaultAzureCredential()
+    client = SecretClient(vault_url=key_vault_url, credential=credential)
+    retrieved_secret = client.get_secret(secret_name)
+    print(f"Secret: {retrieved_secret.value}")
+```
+
+Apply this ConfigMap to your ARO cluster:
+
+```bash
+kubectl apply -f <your-configmap-file>.yaml
+```
